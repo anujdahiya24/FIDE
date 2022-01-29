@@ -1,0 +1,142 @@
+---
+title: "Rapid"
+author: "Anuj Dahiya"
+date: "1/23/2020"
+output: pdf_document
+---
+
+# Libraries
+
+```{r, warning=FALSE, message=FALSE}
+library(readr)
+library(dplyr)
+library(magrittr)
+library(stringr)
+library(Hmisc)
+library(data.table)
+library(lubridate)
+```
+
+# Useful functions
+
+```{r}
+month_conv <- function(year_vector){
+for(i in 1:length(year_vector)){
+  if(nchar(year_vector[i]) == 1){
+    year_vector[i] = paste("0", year_vector[i], sep = "")
+  }
+}
+return(year_vector)
+}
+
+first_line <- function(path){
+    con <- file(path,"r")
+    first_line <- readLines(con,n=1)%>%
+                  str_replace("ID Nu", "ID_Nu")
+    close(con)
+    return(first_line)
+}
+
+indexes <- function(column_vector){ 
+    indexes <- rep(0, nchar(column_vector))
+    for(i in 1:nchar(column_vector)){
+        index = grep("\\s[A-z]", substr(column_vector, i, i+1))
+        if (identical(index, integer(0)) == TRUE){indexes[i] = 0}
+        else {indexes[i] = 1}
+                                    }
+    return(c(0, which(indexes == 1), nchar(column_vector)))
+}
+
+clean <- function(x){
+  x[grepl("Fed|FED|COUNTRY", x)] <- "Country"
+  x[grepl("Gms|GAMES|GM|Game|GAME", x)] <- "Games"
+  x[grepl("K", x)] <- "K_factor"
+  x[grepl("FLAG|Flag|flag", x)] <- "Activity"
+  x[x %in% c("Wtit","wtit","WTIT", "WTit")] <- "WTitle"
+  x[x %in% c("TITLE","Title","title","Tit")] <- "Title"
+  x[grepl(string, x)] <- "Rating"
+  x[grepl("Born|Age|age|BIRTHDAY|B-day|Bday", x)] <- "Age_Birthday"
+  x[grepl("SEX", x)] <- "Sex"
+  x[grepl("FOA", x)] <- "FIDE_Online_Arena"
+  x[grepl("OTit", x)] <- "Other_Titles"
+  return(x)
+}
+
+dates <- function(files){
+  files%>%
+  gsub("rapid_","", ., fixed = TRUE)%>%
+  gsub("frl.txt","", ., fixed = TRUE)-> dates
+  
+  gsub('\\D','', dates)%>%
+  paste("20", ., sep = "") -> years
+  
+  gsub('\\d','', dates)%>%
+  capitalize()%>%
+  match(month.abb)%>%
+  month_conv() -> months
+  
+  return(paste(years, months, "01", sep = "-"))
+}
+
+year_month <- function(x){
+paste(month.abb[month(x)]%>%toupper(),
+      year(x)-2000, 
+      sep = "")
+}
+```
+
+# Paths
+
+```{r}
+path = "~/GitHub/FIDE/Chess Scripts/Step 1 - Download/Rapid/"
+files = list.files(path = path)
+rapid_paths = paste(path, files, sep = "")
+dataset_names = dates(files)
+string <- c(month.abb, tolower(month.abb), toupper(month.abb), "RATING")%>%
+          paste(collapse = "|")
+
+rapid_paths%>%
+sapply(first_line)%>%
+sapply(indexes)%>%
+sapply(diff)%>%
+setNames(files)-> col_positions
+
+rapid_paths%>%
+sapply(first_line)%>%
+strsplit("\\s+")%>%
+lapply(clean)%>%
+setNames(files) -> columns
+```
+
+# Import data
+
+```{r}
+for(i in 1:length(files)){
+assign(dataset_names[i], 
+       suppressMessages(
+         read_fwf(rapid_paths[i], 
+                  col_positions = fwf_widths(col_positions[[i]]),
+                  skip = 1)%>%
+         set_colnames(columns[[i]])
+                       )%>%
+         mutate(date = dataset_names[i])
+      )
+}
+
+FIDE <- mget(ls(pattern = "[0-9][0-9]-[0-9][0-9]"))
+
+names(FIDE) = paste("~/GitHub/FIDE/Chess Scripts/Step 2 - Reformat/Rapid/",
+              year_month(names(FIDE)), ".csv", sep = "")
+
+```
+
+
+# Export data
+
+```{r}
+for (i in 1:length(FIDE)){
+  fwrite(x = FIDE[[i]], 
+         file = names(FIDE)[i])
+}
+```
+
